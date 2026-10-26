@@ -58,6 +58,23 @@ const closeModalBtn = $('#closeModalBtn');
 const canvas = $('#confettiCanvas');
 const ctx = canvas.getContext('2d');
 
+// 초대 링크(?room=코드)로 들어오면 방 코드를 바로 채워 둠 — 다른 코드보다 먼저 실행
+const INVITED_ROOM = (() => {
+  try {
+    const room = (new URLSearchParams(location.search).get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    if (room) {
+      roomCodeInput.value = room;
+      createBtn.classList.add('hidden');
+      const divider = document.querySelector('.divider');
+      if (divider) divider.textContent = `초대받은 방: ${room}`;
+      joinBtn.classList.remove('ghost-btn');
+      joinBtn.classList.add('primary-btn');
+      joinBtn.textContent = `${room} 방 참가하기`;
+    }
+    return room;
+  } catch (e) { return ''; }
+})();
+
 let peer = null;
 let isHost = false;
 let myId = null;
@@ -721,9 +738,9 @@ function renderStatus() {
 
   if (isHost) {
     const inGame = state.phase === 'shuffling' || state.phase === 'playing';
-    orderBtn.textContent = hasLineup ? '① 순서 다시 정하기' : '① 뽑기 순서 정하기';
+    orderBtn.textContent = hasLineup ? '순서 다시 정하기' : '뽑기 순서 정하기';
     orderBtn.disabled = lineupAnimating || inGame;
-    startBtn.textContent = state.phase === 'lobby' ? '② 카드 섞기' : '② 카드 다시 섞기';
+    startBtn.textContent = state.phase === 'lobby' ? '카드 섞기' : '카드 다시 섞기';
     startBtn.disabled = !hasLineup || lineupAnimating;
     startBtn.classList.toggle('primary-btn', hasLineup);
     startBtn.classList.toggle('ghost-btn', !hasLineup);
@@ -1051,29 +1068,29 @@ function stopConfetti() {
 }
 
 /* ---------- 이벤트 연결 ---------- */
-createBtn.addEventListener('click', () => createRoom());
-joinBtn.addEventListener('click', joinRoom);
-roomCodeInput.addEventListener('input', () => { roomCodeInput.value = roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
-roomCodeInput.addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(); });
-nameInput.addEventListener('keydown', e => {
+createBtn?.addEventListener('click', () => createRoom());
+joinBtn?.addEventListener('click', joinRoom);
+roomCodeInput?.addEventListener('input', () => { roomCodeInput.value = roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+roomCodeInput?.addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(); });
+nameInput?.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   if (roomCodeInput.value.trim()) joinRoom(); else createRoom();
 });
-copyLinkBtn.addEventListener('click', copyInvite);
-leaveBtn.addEventListener('click', leaveRoom);
-orderBtn.addEventListener('click', () => { hideModal(); hostOrder(); });
-startBtn.addEventListener('click', () => { hideModal(); hostStart(); });
-resetBtn.addEventListener('click', () => { hideModal(); hostNewBoard(); });
-playersEl.addEventListener('click', e => {
+copyLinkBtn?.addEventListener('click', copyInvite);
+leaveBtn?.addEventListener('click', leaveRoom);
+orderBtn?.addEventListener('click', () => { hideModal(); hostOrder(); });
+startBtn?.addEventListener('click', () => { hideModal(); hostStart(); });
+resetBtn?.addEventListener('click', () => { hideModal(); hostNewBoard(); });
+playersEl?.addEventListener('click', e => {
   const btn = e.target.closest('[data-kick]');
   if (btn && isHost) hostKick(btn.dataset.kick);
 });
-buyerCountInput.addEventListener('input', () => {
+buyerCountInput?.addEventListener('input', () => {
   if (!state || !isHost) return;
   hostSetTarget();
   hostBroadcast();
 });
-buyerCountInput.addEventListener('change', () => {
+buyerCountInput?.addEventListener('change', () => {
   if (!state || !isHost) return;
   buyerCountInput.value = hostSetTarget();
   hostBroadcast();
@@ -1087,24 +1104,16 @@ buyerCountInput.addEventListener('change', () => {
     gridTotalEl.textContent = `${r * c}장`;
   });
 });
-closeModalBtn.addEventListener('click', () => { const action = modalAction; hideModal(); if (action) action(); });
-window.addEventListener('resize', resizeCanvas);
-window.addEventListener('beforeunload', e => {
+closeModalBtn?.addEventListener('click', () => { const action = modalAction; hideModal(); if (action) action(); });
+window?.addEventListener('resize', resizeCanvas);
+window?.addEventListener('beforeunload', e => {
   if (isHost && conns.size > 0) { e.preventDefault(); e.returnValue = ''; }
 });
 
 // 초대 링크로 들어온 경우 방 코드 자동 입력
 (function init() {
-  nameInput.value = loadName();
-  const room = new URLSearchParams(location.search).get('room');
-  if (room) {
-    roomCodeInput.value = room.toUpperCase().slice(0, 4);
-    createBtn.classList.add('hidden');
-    document.querySelector('.divider').textContent = `초대받은 방: ${roomCodeInput.value}`;
-    joinBtn.classList.remove('ghost-btn');
-    joinBtn.classList.add('primary-btn');
-  }
-  (nameInput.value ? (room ? joinBtn : createBtn) : nameInput).focus();
+  try { nameInput.value = loadName(); } catch (e) { /* 무시 */ }
+  (nameInput.value ? (INVITED_ROOM ? joinBtn : createBtn) : nameInput).focus();
   makeCards();
   resizeCanvas();
 })();
