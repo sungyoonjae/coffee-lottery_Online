@@ -860,3 +860,40 @@ select:focus { border-color: var(--gold); box-shadow: 0 0 0 4px rgba(255, 204, 1
   .prob-bar-main { font-size: 14px; }
   .prob-bar-main strong { font-size: 22px; }
 }
+
+/* ===== 강제 퇴장 버튼 ===== */
+.kick-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(255, 92, 92, 0.25);
+  color: #ffb3a8;
+  font-size: 11px;
+  font-weight: 900;
+  box-shadow: none;
+}
+.kick-btn:hover {
+  transform: none;
+  background: #ff5c5c;
+  color: #fff;
+}
+.player-chip.turn .kick-btn { background: rgba(36, 18, 7, 0.18); color: #241207; }
+.prob-sub { font-size: 11px; font-weight: 700; color: rgba(255, 243, 223, 0.6); white-space: nowrap; }
+.prob-sub:empty { display: none; }
+
+/* ===== 단계 버튼 ===== */
+.step-buttons {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
+}
+.step-buttons button { flex: 1; max-width: 240px; height: 52px; font-size: 16px; }
+@media (max-width: 620px) {
+  .step-buttons { flex-direction: column; }
+  .step-buttons button { max-width: none; }
+}
