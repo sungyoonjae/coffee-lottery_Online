@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>커피 제비뽑기 온라인</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
+  <div class="bg-orb orb-3"></div>
+
+  <main class="app">
+    <section class="hero">
+      <div class="badge">Coffee Lottery · Online</div>
+      <h1>오늘의 커피 당번 뽑기</h1>
+      <p>떨어져 있어도 같이! 방을 만들고 코드를 공유하면, 모두 같은 카드판에서 차례대로 카드를 뒤집습니다.</p>
+    </section>
+
+    <!-- 입장 화면 -->
+    <section id="entryScreen" class="entry-panel">
+      <label class="field">
+        <span>내 닉네임</span>
+        <input id="nameInput" type="text" maxlength="12" placeholder="예: 윤재" autocomplete="off" />
+      </label>
+      <button id="createBtn" class="primary-btn">새 방 만들기</button>
+      <div class="divider">또는 방 코드로 참가</div>
+      <div class="entry-row">
+        <label class="field">
+          <span>방 코드</span>
+          <input id="roomCodeInput" type="text" maxlength="4" placeholder="ABCD" autocomplete="off" />
+        </label>
+        <button id="joinBtn" class="ghost-btn">참가하기</button>
+      </div>
+      <p id="entryMsg" class="connecting hidden"></p>
+    </section>
+
+    <!-- 방 화면 -->
+    <section id="roomScreen" class="hidden">
+      <div class="room-bar">
+        <div class="room-code"><span>방 코드</span><strong id="roomCodeText">----</strong></div>
+        <div class="room-actions">
+          <button id="copyLinkBtn" class="ghost-btn">초대 링크 복사</button>
+          <button id="leaveBtn" class="ghost-btn">나가기</button>
+        </div>
+      </div>
+
+      <div id="players" class="players"></div>
+
+      <section id="hostPanel" class="control-panel hidden">
+        <label class="field">
+          <span>커피 살 사람 수</span>
+          <input id="buyerCount" type="number" min="1" max="25" value="1" />
+        </label>
+        <button id="startBtn" class="primary-btn">카드 섞기</button>
+        <button id="skipBtn" class="ghost-btn">차례 넘기기</button>
+        <button id="resetBtn" class="ghost-btn">초기화</button>
+      </section>
+
+      <section class="status-card">
+        <div>
+          <strong id="statusTitle">연결 중...</strong>
+          <p id="statusText"></p>
+        </div>
+        <div class="counter">
+          <span id="foundCount">0</span>/<span id="targetCount">1</span>
+        </div>
+      </section>
+
+      <section id="board" class="board locked" aria-label="커피 제비뽑기 카드판"></section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <div id="resultModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div id="modalEmoji" class="modal-emoji">🎉☕🎊</div>
+      <h2 id="modalTitle">당첨입니다~~</h2>
+      <p id="modalText">오늘 커피 잘 마시겠습니다.</p>
+      <button id="closeModalBtn" class="primary-btn">닫기</button>
+    </div>
+  </div>
+
+  <canvas id="confettiCanvas"></canvas>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
