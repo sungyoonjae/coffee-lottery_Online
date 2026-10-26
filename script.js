@@ -65,6 +65,16 @@ const INVITED_ROOM = (() => {
     if (room) {
       roomCodeInput.value = room;
       createBtn.classList.add('hidden');
+      // 초대받은 사람은 닉네임만 입력: 방 코드 칸은 숨김
+      const codeField = roomCodeInput.closest('.field');
+      if (codeField) codeField.classList.add('hidden');
+      const row = joinBtn.closest('.entry-row');
+      if (row) row.classList.add('invited');
+      const back = document.createElement('a');
+      back.href = location.pathname;
+      back.className = 'entry-back';
+      back.textContent = '다른 방에 들어가거나 새 방 만들기';
+      entryScreen.appendChild(back);
       const divider = document.querySelector('.divider');
       if (divider) divider.textContent = `초대받은 방: ${room}`;
       joinBtn.classList.remove('ghost-btn');

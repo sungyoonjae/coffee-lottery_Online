@@ -897,3 +897,13 @@ select:focus { border-color: var(--gold); box-shadow: 0 0 0 4px rgba(255, 204, 1
   .step-buttons { flex-direction: column; }
   .step-buttons button { max-width: none; }
 }
+
+/* ===== 초대 링크로 들어온 화면 ===== */
+.entry-row.invited { flex-direction: column; align-items: stretch; }
+.entry-row.invited button { height: 54px; font-size: 17px; }
+.entry-back {
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255, 243, 223, 0.55);
+  text-decoration: underline;
+}
