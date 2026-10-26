@@ -6,7 +6,12 @@
  */
 
 const PREFIX = 'i3lab-coffee-lottery-v1-';
-const TOTAL_CARDS = 25;
+const DEFAULT_COLS = 5;
+const DEFAULT_ROWS = 5;
+const GRID_MAX = 10;
+function gridCols() { return (state && state.cols) || DEFAULT_COLS; }
+function gridRows() { return (state && state.rows) || DEFAULT_ROWS; }
+function cardCount() { return gridRows() * gridCols(); }
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const safeEmojis = ['🥐', '🍩', '🍪', '🍰', '🧁', '🥨', '🍫', '🍮', '🥞', '🍯', '🥤', '🫖', '🍵', '🥛', '🍦'];
 const buyerEmojis = ['☕', '💸', '🧾', '🫡', '😵', '🔥'];
@@ -25,8 +30,19 @@ const leaveBtn = $('#leaveBtn');
 const playersEl = $('#players');
 const hostPanel = $('#hostPanel');
 const buyerCountInput = $('#buyerCount');
+const gridRowsInput = $('#gridRows');
+const gridColsInput = $('#gridCols');
+const gridTotalEl = $('#gridTotal');
+const probLabel = $('#probLabel');
+const probValue = $('#probValue');
+const probSub = $('#probSub');
+const probBar = $('#probBar');
+const probBarWho = $('#probBarWho');
+const probBarValue = $('#probBarValue');
+const probBarDetail = $('#probBarDetail');
+const orderBtn = $('#orderBtn');
 const startBtn = $('#startBtn');
-const skipBtn = $('#skipBtn');
+const lineupEl = $('#lineup');
 const resetBtn = $('#resetBtn');
 const statusTitle = $('#statusTitle');
 const statusText = $('#statusText');
@@ -51,8 +67,11 @@ const conns = new Map();      // 방장: peerId -> 연결
 let state = null;             // 모두가 공유하는 게임 상태
 let secret = [];              // 방장 전용: 각 카드가 커피 사기인지
 let renderedRound = -1;
+let renderedCols = -1;
 let lastSeenEvent = -1;
 let modalAction = null;
+let lineupAnimating = false;
+let lineupTimers = [];
 let confettiParticles = [];
 let confettiAnimation = null;
 
@@ -79,7 +98,7 @@ function escapeHtml(text) {
 }
 
 function blankCards() {
-  return Array.from({ length: TOTAL_CARDS }, () => ({ flipped: false }));
+  return Array.from({ length: cardCount() }, () => ({ flipped: false }));
 }
 
 function playerName(id) {
@@ -127,8 +146,11 @@ function createRoom(attempt = 0) {
       players: [{ id: 'host', name: myName, online: true, host: true }],
       phase: 'lobby',
       target: 1,
+      rows: DEFAULT_ROWS,
+      cols: DEFAULT_COLS,
       round: 0,
-      cards: blankCards(),
+      cards: Array.from({ length: DEFAULT_ROWS * DEFAULT_COLS }, () => ({ flipped: false })),
+      lineup: [],
       order: [],
       turn: null,
       buyers: [],
@@ -176,12 +198,15 @@ function hostHandle(conn, msg) {
   const id = conn.peer;
 
   if (msg.t === 'join') {
+    const finalName = cleanName(msg.name);
+    const key = finalName.toLowerCase();
+    const duplicate = state.players.some(p => p.id !== id && p.online && p.name.toLowerCase() === key);
+    if (!finalName || duplicate) {
+      conn.send({ t: 'reject', reason: finalName ? 'duplicate' : 'empty', name: finalName });
+      setTimeout(() => conn.close(), 300);
+      return;
+    }
     conns.set(id, conn);
-    let name = cleanName(msg.name) || '손님';
-    const taken = new Set(state.players.filter(p => p.id !== id && p.online).map(p => p.name));
-    let finalName = name;
-    let n = 2;
-    while (taken.has(finalName)) { finalName = `${name}${n}`; n += 1; }
 
     const existing = state.players.find(p => p.id === id);
     if (existing) {
@@ -199,7 +224,7 @@ function hostHandle(conn, msg) {
   if (msg.t === 'flip') hostFlip(id, Number(msg.index));
 }
 
-function hostPlayerLeft(id) {
+function hostPlayerLeft(id, reason) {
   if (!conns.has(id)) return;
   conns.delete(id);
   const player = state.players.find(p => p.id === id);
@@ -207,6 +232,7 @@ function hostPlayerLeft(id) {
 
   if (state.phase === 'lobby') {
     state.players = state.players.filter(p => p.id !== id);
+    state.lineup = state.lineup.filter(pid => pid !== id);
   } else {
     player.online = false;
   }
@@ -221,7 +247,7 @@ function hostPlayerLeft(id) {
     if (!state.turn) finishEarly();
   }
 
-  hostEmit({ kind: 'leave', name: player.name });
+  hostEmit({ kind: reason === 'kick' ? 'kick' : 'leave', name: player.name });
   hostBroadcast();
 }
 
@@ -247,19 +273,85 @@ function finishEarly() {
   state.turn = null;
 }
 
+function hostOrder() {
+  if (state.phase === 'shuffling' || state.phase === 'playing') return;
+  if (lineupAnimating) return;
+  state.players = state.players.filter(p => p.online);
+  if (state.phase === 'done') {
+    state.round += 1;
+    state.cards = blankCards();
+    state.buyers = [];
+    state.turn = null;
+    secret = [];
+  }
+  state.phase = 'lobby';
+  state.order = [];
+  state.lineup = shuffle(state.players.map(p => p.id));
+  hostEmit({ kind: 'lineup', lineup: state.lineup, names: state.players.map(p => p.name) });
+  hostBroadcast();
+}
+
+function clampTarget(value, people) {
+  const n = Number.parseInt(value, 10) || 1;
+  return Math.min(Math.max(n, 1), Math.max(people, 1), cardCount() - 1);
+}
+
+function clampGrid(value, fallback) {
+  const n = Number.parseInt(value, 10);
+  if (Number.isNaN(n)) return fallback;
+  return Math.min(Math.max(n, 1), GRID_MAX);
+}
+
+function hostSetGrid() {
+  if (state.phase === 'shuffling' || state.phase === 'playing') {
+    gridRowsInput.value = String(gridRows());
+    gridColsInput.value = String(gridCols());
+    return;
+  }
+  let rows = clampGrid(gridRowsInput.value, gridRows());
+  let cols = clampGrid(gridColsInput.value, gridCols());
+  if (rows * cols < 2) cols = 2; // 최소 2장은 있어야 뽑기가 됨
+  gridRowsInput.value = String(rows);
+  gridColsInput.value = String(cols);
+  if (rows === gridRows() && cols === gridCols()) return;
+  state.rows = rows;
+  state.cols = cols;
+  state.round += 1;
+  state.phase = 'lobby';
+  state.cards = blankCards();
+  state.buyers = [];
+  state.turn = null;
+  state.order = [];
+  secret = [];
+  hostSetTarget();
+  hostEmit({ kind: 'grid' });
+  hostBroadcast();
+}
+
+function hostSetTarget() {
+  const people = state.lineup.length || state.players.filter(p => p.online).length;
+  const target = clampTarget(buyerCountInput.value, people);
+  if (state.phase === 'lobby') state.target = target;
+  return target;
+}
+
 function hostStart() {
-  const online = state.players.filter(p => p.online);
-  const target = Math.min(Math.max(Number.parseInt(buyerCountInput.value, 10) || 1, 1), online.length, TOTAL_CARDS);
+  if (lineupAnimating) return;
+  const lineup = state.lineup.filter(isOnline);
+  if (lineup.length === 0) { showToast('먼저 뽑기 순서 정하기를 눌러주세요.'); return; }
+  const target = clampTarget(buyerCountInput.value, lineup.length);
   buyerCountInput.value = target;
 
-  const buyerIndexes = new Set(shuffle([...Array(TOTAL_CARDS).keys()]).slice(0, target));
-  secret = Array.from({ length: TOTAL_CARDS }, (_, i) => buyerIndexes.has(i));
+  const total = cardCount();
+  const buyerIndexes = new Set(shuffle([...Array(total).keys()]).slice(0, target));
+  secret = Array.from({ length: total }, (_, i) => buyerIndexes.has(i));
 
   state.round += 1;
   state.target = target;
   state.phase = 'shuffling';
   state.cards = blankCards();
-  state.order = shuffle(online.map(p => p.id));
+  state.lineup = lineup;
+  state.order = [...lineup];
   state.buyers = [];
   state.turn = null;
   // 다음 판에는 오프라인 참가자를 목록에서 정리
@@ -273,7 +365,7 @@ function hostStart() {
     state.phase = 'playing';
     state.turn = nextTurnFrom(0, true);
     if (!state.turn) finishEarly();
-    hostEmit({ kind: 'start', order: state.order.map(playerName) });
+    hostEmit({ kind: 'start' });
     hostBroadcast();
   }, 1400);
 }
@@ -281,7 +373,7 @@ function hostStart() {
 function hostFlip(id, index) {
   if (state.phase !== 'playing') return;
   if (state.turn !== id) return;
-  if (!Number.isInteger(index) || index < 0 || index >= TOTAL_CARDS) return;
+  if (!Number.isInteger(index) || index < 0 || index >= cardCount()) return;
   if (state.cards[index].flipped) return;
 
   const isBuyer = secret[index];
@@ -314,27 +406,34 @@ function hostFlip(id, index) {
   hostBroadcast();
 }
 
-function hostSkip() {
-  if (state.phase !== 'playing' || !state.turn) return;
-  const skipped = playerName(state.turn);
-  const idx = state.order.indexOf(state.turn);
-  state.turn = nextTurnFrom(idx, false);
-  if (!state.turn) finishEarly();
-  hostEmit({ kind: 'skip', name: skipped });
-  hostBroadcast();
-}
-
-function hostReset() {
+function hostNewBoard() {
+  if ((state.phase === 'shuffling' || state.phase === 'playing') && !confirm('진행 중인 판을 끝내고, 참가자는 그대로 둔 채 새 판을 만들까요?')) return;
+  stopLineupAnimation();
+  state.players = state.players.filter(p => p.online);
+  state.lineup = state.lineup.filter(isOnline);
   state.round += 1;
   state.phase = 'lobby';
   state.cards = blankCards();
   state.order = [];
   state.buyers = [];
   state.turn = null;
-  state.players = state.players.filter(p => p.online);
   secret = [];
-  hostEmit({ kind: 'reset' });
+  hostSetTarget();
+  hostEmit({ kind: 'newboard' });
   hostBroadcast();
+  hostPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => { gridRowsInput.focus(); gridRowsInput.select(); }, 350);
+  showToast('새 판! 카드판 크기와 인원을 정하고 카드 섞기를 누르세요.');
+}
+
+function hostKick(id) {
+  const player = state.players.find(p => p.id === id);
+  const conn = conns.get(id);
+  if (!player || !conn || id === 'host') return;
+  if (!confirm(`${player.name}님을 강제 퇴장시킬까요?`)) return;
+  try { conn.send({ t: 'kicked' }); } catch (e) { /* 무시 */ }
+  setTimeout(() => { try { conn.close(); } catch (e) { /* 무시 */ } }, 400);
+  hostPlayerLeft(id, 'kick');
 }
 
 /* ---------- 참가자(Guest) ---------- */
@@ -349,6 +448,8 @@ function joinRoom() {
 
   peer = new Peer();
   let opened = false;
+  let rejected = false;
+  let kicked = false;
 
   peer.on('open', () => {
     hostConn = peer.connect(PREFIX + code, { reliable: true });
@@ -365,16 +466,37 @@ function joinRoom() {
 
     hostConn.on('data', msg => {
       if (!msg || typeof msg !== 'object') return;
+      if (msg.t === 'reject') {
+        rejected = true;
+        failJoin(msg.reason === 'duplicate'
+          ? `'${msg.name}'은(는) 이미 방에 있는 닉네임이에요. 다른 닉네임으로 참가해주세요.`
+          : '닉네임을 입력해주세요.');
+        nameInput.focus();
+        nameInput.select();
+        return;
+      }
+      if (msg.t === 'kicked') {
+        kicked = true;
+        showModal({
+          emoji: '🚪',
+          title: '방장이 강제퇴장 시켰습니다!',
+          text: '이 방에서 나가게 되었어요.',
+          button: '처음으로',
+          action: () => location.href = location.pathname
+        });
+        if (peer) peer.destroy();
+        return;
+      }
       if (msg.t === 'welcome') {
         myId = msg.id;
         enterRoom();
       }
       if (msg.t === 'state' && myId) applyState(msg.state);
-      if (msg.t === 'state' && !myId) { myId = peer.id; enterRoom(); applyState(msg.state); }
+      if (msg.t === 'state' && !myId && !rejected) { myId = peer.id; enterRoom(); applyState(msg.state); }
     });
 
     hostConn.on('close', () => {
-      if (!opened) return;
+      if (!opened || rejected || kicked) return;
       showModal({
         emoji: '👋',
         title: '방이 종료됐어요',
@@ -413,7 +535,13 @@ function enterRoom() {
 
 function makeCards() {
   board.innerHTML = '';
-  for (let index = 0; index < TOTAL_CARDS; index += 1) {
+  const cols = gridCols();
+  const rows = gridRows();
+  board.style.setProperty('--cols', Math.max(cols, Math.ceil(rows * 0.8)));
+  board.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  board.style.width = cols <= 3 ? `min(${cols * 150}px, 100%)` : '';
+  const total = rows * cols;
+  for (let index = 0; index < total; index += 1) {
     const button = document.createElement('button');
     button.className = 'card';
     button.type = 'button';
@@ -443,7 +571,7 @@ function makeCards() {
 
 function onCardClick(index) {
   if (!state) return;
-  if (state.phase === 'lobby') { showToast(isHost ? '먼저 카드 섞기를 눌러주세요.' : '방장이 카드를 섞을 때까지 기다려주세요.'); return; }
+  if (state.phase === 'lobby') { showToast(isHost ? (state.lineup.length ? '카드 섞기를 눌러 시작하세요.' : '먼저 뽑기 순서 정하기를 눌러주세요.') : '방장이 아직 시작하지 않았어요.'); return; }
   if (state.phase === 'shuffling') return;
   if (state.phase === 'done') { showToast('이번 판은 끝났어요.'); return; }
   if (state.cards[index].flipped) return;
@@ -460,9 +588,11 @@ function applyState(s) {
   state = s;
   roomCodeText.textContent = s.code;
 
-  if (s.round !== renderedRound) {
+  const gridKey = `${gridRows()}x${gridCols()}`;
+  if (s.round !== renderedRound || gridKey !== renderedCols) {
     makeCards();
     renderedRound = s.round;
+    renderedCols = gridKey;
     hideModal();
     stopConfetti();
   }
@@ -488,6 +618,7 @@ function applyState(s) {
 
   renderPlayers();
   renderStatus();
+  if (!lineupAnimating) renderLineup();
 
   if (firstState) {
     lastSeenEvent = s.eventSeq;
@@ -498,8 +629,71 @@ function applyState(s) {
   }
 }
 
+function formatPercent(p) {
+  const v = p * 100;
+  if (v >= 99.95) return '100%';
+  return (v < 10 ? v.toFixed(1) : String(Math.round(v))) + '%';
+}
+
+function renderProbBar(show, who, percent, detail) {
+  probBar.classList.toggle('hidden', !show);
+  if (!show) return;
+  probBarWho.textContent = who;
+  probBarDetail.textContent = detail;
+  if (probBarValue.textContent !== percent) {
+    probBarValue.textContent = percent;
+    probBarValue.classList.remove('bump');
+    void probBarValue.offsetWidth; // 애니메이션 재시작
+    probBarValue.classList.add('bump');
+  }
+}
+
+function renderProbability() {
+  const total = state.cards.length;
+  const remaining = state.cards.filter(c => !c.flipped).length;
+  const left = state.target - state.buyers.length;
+  if (state.phase === 'playing' && remaining > 0) {
+    const mine = state.turn === myId;
+    renderProbBar(
+      true,
+      mine ? '👉 내 차례' : `👉 ${playerName(state.turn)}님 차례`,
+      formatPercent(left / remaining),
+      `남은 ${remaining}장 중 커피 사기 ${left}장`
+    );
+    probBar.classList.toggle('mine', mine);
+  } else if (state.phase === 'shuffling') {
+    renderProbBar(true, '🔀 카드 섞는 중', formatPercent(state.target / total), `${total}장 중 커피 사기 ${state.target}장`);
+    probBar.classList.remove('mine');
+  } else {
+    renderProbBar(false);
+  }
+  if (state.phase === 'playing' && remaining > 0) {
+    probLabel.textContent = state.turn === myId ? '내가 걸릴 확률' : '이번 카드 확률';
+    probValue.textContent = formatPercent(left / remaining);
+    probValue.title = `남은 카드 ${remaining}장 중 커피 사기 ${left}장`;
+    probSub.textContent = `남은 ${remaining}장`;
+  } else if (state.phase === 'lobby' || state.phase === 'shuffling') {
+    probLabel.textContent = '첫 장 확률';
+    probValue.textContent = formatPercent(state.target / total);
+    probValue.title = `${total}장 중 커피 사기 ${state.target}장`;
+    probSub.textContent = `총 ${total}장`;
+  } else {
+    probLabel.textContent = '당첨 확률';
+    probValue.textContent = '-';
+    probValue.title = '';
+    probSub.textContent = '';
+  }
+}
+
 function renderPlayers() {
-  playersEl.innerHTML = state.players.map(p => {
+  const rank = id => {
+    const i = state.lineup.indexOf(id);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  const players = lineupAnimating
+    ? state.players
+    : [...state.players].sort((a, b) => rank(a.id) - rank(b.id));
+  playersEl.innerHTML = players.map(p => {
     const classes = ['player-chip'];
     if (p.id === myId) classes.push('me');
     if (state.turn === p.id) classes.push('turn');
@@ -507,26 +701,61 @@ function renderPlayers() {
     if (!p.online) classes.push('offline');
     const icon = state.buyers.includes(p.id) ? '☕' : (state.turn === p.id ? '👉' : (p.host ? '👑' : '🙂'));
     const tags = [p.id === myId ? '나' : '', p.host ? '방장' : ''].filter(Boolean).join('·');
-    return `<span class="${classes.join(' ')}">${icon} ${escapeHtml(p.name)}${tags ? ` <small>${tags}</small>` : ''}</span>`;
+    const pos = lineupAnimating ? -1 : state.lineup.indexOf(p.id);
+    const num = pos >= 0 ? `<b class="chip-num">${pos + 1}</b>` : '';
+    const kick = isHost && p.id !== 'host' && p.online
+      ? `<button type="button" class="kick-btn" data-kick="${escapeHtml(p.id)}" title="${escapeHtml(p.name)}님 강제 퇴장" aria-label="${escapeHtml(p.name)}님 강제 퇴장">✕</button>`
+      : '';
+    return `<span class="${classes.join(' ')}">${num}${icon} ${escapeHtml(p.name)}${tags ? ` <small>${tags}</small>` : ''}${kick}</span>`;
   }).join('');
 }
 
 function renderStatus() {
   const onlineCount = state.players.filter(p => p.online).length;
   foundCountEl.textContent = String(state.buyers.length);
-  targetCountEl.textContent = String(state.phase === 'lobby' ? (isHost ? (Number.parseInt(buyerCountInput.value, 10) || 1) : state.target) : state.target);
+  targetCountEl.textContent = String(state.target);
+  renderProbability();
+
+  const hasLineup = state.lineup.length > 0;
+  const outsiders = state.players.filter(p => p.online && !state.lineup.includes(p.id)).length;
 
   if (isHost) {
-    startBtn.textContent = state.phase === 'lobby' ? '카드 섞기' : '새로 섞기';
-    skipBtn.classList.toggle('hidden', state.phase !== 'playing');
-    buyerCountInput.max = String(Math.max(onlineCount, 1));
+    const inGame = state.phase === 'shuffling' || state.phase === 'playing';
+    orderBtn.textContent = hasLineup ? '① 순서 다시 정하기' : '① 뽑기 순서 정하기';
+    orderBtn.disabled = lineupAnimating || inGame;
+    startBtn.textContent = state.phase === 'lobby' ? '② 카드 섞기' : '② 카드 다시 섞기';
+    startBtn.disabled = !hasLineup || lineupAnimating;
+    startBtn.classList.toggle('primary-btn', hasLineup);
+    startBtn.classList.toggle('ghost-btn', !hasLineup);
+    orderBtn.classList.toggle('primary-btn', !hasLineup || state.phase === 'done');
+    orderBtn.classList.toggle('ghost-btn', hasLineup && state.phase !== 'done');
+    [orderBtn, startBtn].forEach(b => { b.style.opacity = b.disabled ? 0.5 : 1; });
+    buyerCountInput.max = String(Math.max(Math.min(hasLineup ? state.lineup.length : onlineCount, cardCount() - 1), 1));
+    [gridRowsInput, gridColsInput].forEach(input => {
+      input.disabled = inGame;
+      input.style.opacity = inGame ? 0.5 : 1;
+    });
+    if (document.activeElement !== gridRowsInput) gridRowsInput.value = String(gridRows());
+    if (document.activeElement !== gridColsInput) gridColsInput.value = String(gridCols());
+    gridTotalEl.textContent = `${cardCount()}장`;
+    buyerCountInput.disabled = inGame;
+    buyerCountInput.style.opacity = inGame ? 0.5 : 1;
   }
 
-  if (state.phase === 'lobby') {
+  if (state.phase === 'lobby' && lineupAnimating) {
+    statusTitle.textContent = '순서 섞는 중...';
+    statusText.textContent = '두구두구두구... 누가 먼저일까요?';
+  } else if (state.phase === 'lobby' && !hasLineup) {
     statusTitle.textContent = `참가자 ${onlineCount}명 대기 중`;
     statusText.textContent = isHost
-      ? '초대 링크(또는 방 코드)를 공유하고, 모두 들어오면 카드 섞기를 누르세요.'
-      : '방장이 카드를 섞을 때까지 기다려주세요.';
+      ? '초대 링크(또는 방 코드)를 공유하고, 모두 들어오면 뽑기 순서 정하기를 누르세요.'
+      : '방장이 순서를 정할 때까지 기다려주세요.';
+  } else if (state.phase === 'lobby') {
+    statusTitle.textContent = '순서 확정!';
+    const extra = outsiders ? ` (순서에 없는 참가자 ${outsiders}명 — 순서 다시 정하기를 누르면 포함돼요)` : '';
+    statusText.textContent = (isHost
+      ? '커피 살 사람 수를 정하고 카드 섞기를 누르면 시작합니다.'
+      : '방장이 카드를 섞으면 시작합니다.') + extra;
   } else if (state.phase === 'shuffling') {
     statusTitle.textContent = '카드 섞는 중...';
     statusText.textContent = '커피 사기 카드가 랜덤으로 배치되고 있습니다.';
@@ -552,8 +781,12 @@ function handleEvent(e) {
   if (e.kind === 'join') showToast(`${e.name}님이 들어왔어요`);
   if (e.kind === 'leave') showToast(`${e.name}님이 나갔어요`);
   if (e.kind === 'reset') showToast('방장이 초기화했어요');
+  if (e.kind === 'newboard' && !isHost) showToast('방장이 새 판을 만들었어요');
+  if (e.kind === 'kick') showToast(`방장이 ${e.name}님을 강제퇴장 시켰어요`);
+  if (e.kind === 'grid') showToast(`카드판이 ${gridRows()} × ${gridCols()} (${cardCount()}장)로 바뀌었어요`);
   if (e.kind === 'skip') showToast(`${e.name}님 차례를 넘겼어요`);
-  if (e.kind === 'start') showToast(`순서: ${e.order.join(' → ')}`);
+  if (e.kind === 'start') showToast(`${playerName(state.turn)}님부터 시작!`);
+  if (e.kind === 'lineup') playLineupAnimation(e.lineup);
 
   if (e.kind === 'flip') {
     const button = board.children[e.index];
@@ -570,7 +803,7 @@ function handleEvent(e) {
     if (e.done) setTimeout(showResultModal, 600);
   }
 
-  if (e.kind === 'leave' && state.phase === 'done' && state.buyers.length < state.target) showResultModal();
+  if ((e.kind === 'leave' || e.kind === 'kick') && state.phase === 'done' && state.buyers.length < state.target) showResultModal();
 }
 
 function showResultModal() {
@@ -580,10 +813,129 @@ function showResultModal() {
     emoji: names.length ? '🎉☕🎊' : '😶',
     title: names.length ? (iWon ? '당첨입니다~~ (나!)' : '당첨입니다~~') : '게임 종료',
     text: names.length ? `${names.join(', ')}님이 커피 삽니다. 오늘 커피 잘 마시겠습니다 ☕` : '참가자가 모두 나가서 게임이 끝났어요.',
-    button: isHost ? '한 번 더 하기' : '닫기',
-    action: isHost ? hostStart : hideModal
+    button: isHost ? '새 판 만들기' : '닫기',
+    action: isHost ? hostNewBoard : hideModal
   });
   if (names.length) burstConfetti(280);
+  if (isHost) modalText.textContent += ' 같은 멤버로 카드판 크기를 다시 정해서 한 판 더 할 수 있어요.';
+}
+
+function renderLineup() {
+  if (!state.lineup.length) {
+    lineupEl.innerHTML = `<div class="lineup-empty">${isHost ? '모두 들어오면 <b>뽑기 순서 정하기</b>를 눌러 순서를 정하세요' : '방장이 순서를 정하면 여기에 표시돼요'}</div>`;
+    return;
+  }
+  lineupEl.innerHTML = state.lineup.map((id, i) => {
+    const cls = ['lineup-tile'];
+    if (id === myId) cls.push('me');
+    if (state.turn === id) cls.push('turn');
+    if (state.buyers.includes(id)) cls.push('buyer');
+    if (!isOnlineAny(id)) cls.push('offline');
+    const mark = state.buyers.includes(id) ? '☕' : (state.turn === id ? '👉' : '');
+    return `<div class="${cls.join(' ')}"><span class="lineup-num">${i + 1}</span><span class="lineup-name">${escapeHtml(playerName(id))}</span>${mark ? `<span class="lineup-mark">${mark}</span>` : ''}</div>`;
+  }).join('');
+}
+
+function isOnlineAny(id) {
+  const p = state.players.find(player => player.id === id);
+  return Boolean(p && p.online);
+}
+
+function stopLineupAnimation() {
+  lineupTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
+  lineupTimers = [];
+  lineupAnimating = false;
+}
+
+function playLineupAnimation(finalIds) {
+  stopLineupAnimation();
+  lineupAnimating = true;
+  renderStatus();
+  renderPlayers();
+
+  // 처음엔 아무 순서로 깔아두고
+  let current = shuffle(finalIds);
+  lineupEl.innerHTML = '';
+  const tileById = new Map();
+  current.forEach(id => {
+    const tile = document.createElement('div');
+    tile.className = 'lineup-tile shuffling-tile';
+    if (id === myId) tile.classList.add('me');
+    tile.innerHTML = `<span class="lineup-num">?</span><span class="lineup-name">${escapeHtml(playerName(id))}</span>`;
+    tileById.set(id, tile);
+    lineupEl.appendChild(tile);
+  });
+
+  // FLIP 방식: 자리를 바꾼 뒤, 원래 위치에서 새 위치로 미끄러지듯 이동
+  function moveTo(order, duration) {
+    const before = new Map();
+    order.forEach(id => before.set(id, tileById.get(id).getBoundingClientRect()));
+    order.forEach((id, i) => {
+      const tile = tileById.get(id);
+      lineupEl.appendChild(tile);
+      tile.querySelector('.lineup-num').textContent = String(i + 1);
+    });
+    order.forEach(id => {
+      const tile = tileById.get(id);
+      const a = before.get(id);
+      const b = tile.getBoundingClientRect();
+      const dx = a.left - b.left;
+      const dy = a.top - b.top;
+      if (!dx && !dy) return;
+      tile.style.transition = 'none';
+      tile.style.transform = `translate(${dx}px, ${dy}px)`;
+      tile.getBoundingClientRect(); // 강제 리플로우
+      tile.style.transition = `transform ${duration}ms cubic-bezier(.3,.9,.3,1)`;
+      tile.style.transform = '';
+    });
+  }
+
+  // 빠르게 촤르르르 → 점점 느려지며 → 최종 순서에 착
+  const steps = finalIds.length <= 1 ? 1 : 26;
+  const delays = [];
+  for (let i = 0; i < steps; i += 1) {
+    const t = i / Math.max(steps - 1, 1);
+    delays.push(55 + Math.pow(t, 2.6) * 480);
+  }
+
+  let elapsed = 250;
+  delays.forEach((delay, i) => {
+    elapsed += delay;
+    const isLast = i === delays.length - 1;
+    const timer = setTimeout(() => {
+      if (isLast) {
+        current = [...finalIds];
+      } else {
+        let next = shuffle(current);
+        if (next.length > 1 && next.every((id, k) => id === current[k])) next = [...next.slice(1), next[0]];
+        current = next;
+      }
+      moveTo(current, Math.max(Math.min(delay * 0.9, 420), 60));
+    }, elapsed);
+    lineupTimers.push(timer);
+  });
+
+  // 착지: 1번부터 차례로 콕콕
+  const landAt = elapsed + 450;
+  finalIds.forEach((id, i) => {
+    const timer = setTimeout(() => {
+      const tile = tileById.get(id);
+      tile.classList.remove('shuffling-tile');
+      tile.classList.add('landed');
+    }, landAt + i * 110);
+    lineupTimers.push(timer);
+  });
+
+  const doneTimer = setTimeout(() => {
+    lineupAnimating = false;
+    lineupTimers = [];
+    renderLineup();
+    renderPlayers();
+    renderStatus();
+    const myPos = finalIds.indexOf(myId);
+    showToast(myPos >= 0 ? `순서 확정! 나는 ${myPos + 1}번째` : '순서 확정!');
+  }, landAt + finalIds.length * 110 + 500);
+  lineupTimers.push(doneTimer);
 }
 
 function showModal({ emoji, title, text, button, action }) {
@@ -709,10 +1061,32 @@ nameInput.addEventListener('keydown', e => {
 });
 copyLinkBtn.addEventListener('click', copyInvite);
 leaveBtn.addEventListener('click', leaveRoom);
+orderBtn.addEventListener('click', () => { hideModal(); hostOrder(); });
 startBtn.addEventListener('click', () => { hideModal(); hostStart(); });
-skipBtn.addEventListener('click', hostSkip);
-resetBtn.addEventListener('click', hostReset);
-buyerCountInput.addEventListener('input', () => { if (state) renderStatus(); });
+resetBtn.addEventListener('click', () => { hideModal(); hostNewBoard(); });
+playersEl.addEventListener('click', e => {
+  const btn = e.target.closest('[data-kick]');
+  if (btn && isHost) hostKick(btn.dataset.kick);
+});
+buyerCountInput.addEventListener('input', () => {
+  if (!state || !isHost) return;
+  hostSetTarget();
+  hostBroadcast();
+});
+buyerCountInput.addEventListener('change', () => {
+  if (!state || !isHost) return;
+  buyerCountInput.value = hostSetTarget();
+  hostBroadcast();
+});
+[gridRowsInput, gridColsInput].forEach(input => {
+  input.addEventListener('change', () => { if (state && isHost) hostSetGrid(); });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+  input.addEventListener('input', () => {
+    const r = clampGrid(gridRowsInput.value, gridRows());
+    const c = clampGrid(gridColsInput.value, gridCols());
+    gridTotalEl.textContent = `${r * c}장`;
+  });
+});
 closeModalBtn.addEventListener('click', () => { const action = modalAction; hideModal(); if (action) action(); });
 window.addEventListener('resize', resizeCanvas);
 window.addEventListener('beforeunload', e => {
