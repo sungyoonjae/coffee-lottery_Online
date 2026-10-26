@@ -605,3 +605,185 @@ button:active {
   .room-bar { border-radius: 20px; }
   .room-code strong { font-size: 24px; }
 }
+
+/* ===== 순서(라인업) ===== */
+.lineup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: min(760px, 100%);
+  margin: 18px auto 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.07);
+  min-height: 68px;
+}
+
+.lineup-empty {
+  color: rgba(255, 243, 223, 0.6);
+  font-weight: 700;
+  font-size: 14px;
+}
+.lineup-empty b { color: var(--gold); }
+
+.lineup-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 8px 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, #8a4d2a, #3a1d0d);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+  font-weight: 900;
+  transition: transform 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+}
+
+.lineup-num {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--gold);
+  font-size: 14px;
+}
+
+.lineup-name {
+  min-width: 3em;
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lineup-arrow {
+  color: rgba(255, 243, 223, 0.4);
+  font-weight: 900;
+  font-size: 20px;
+}
+
+.lineup-tile.me { border-color: rgba(255, 204, 102, 0.8); }
+
+.lineup-tile.turn {
+  color: #241207;
+  background: linear-gradient(135deg, #ffe0a1, #ffb342);
+  box-shadow: 0 0 0 4px rgba(255, 204, 102, 0.25), 0 12px 30px rgba(255, 179, 66, 0.35);
+  transform: scale(1.08);
+}
+.lineup-tile.turn .lineup-num { background: rgba(36, 18, 7, 0.15); color: #241207; }
+
+.lineup-tile.buyer {
+  background: linear-gradient(145deg, #ffcf61, #f14e4e 58%, #741c1c);
+}
+
+.lineup-tile.offline { opacity: 0.4; text-decoration: line-through; }
+
+.lineup-tile.spinning {
+  animation: shuffleDance 0.5s ease-in-out infinite;
+}
+.lineup-tile.spinning .lineup-name {
+  filter: blur(0.6px);
+  opacity: 0.85;
+}
+
+.lineup-tile.landed {
+  animation: tileLand 0.45s cubic-bezier(.18,1.35,.3,1) both;
+}
+
+@keyframes tileLand {
+  0% { transform: scale(1.35) rotate(-6deg); background: #ffe0a1; color: #241207; }
+  100% { transform: scale(1) rotate(0); }
+}
+
+button:disabled { cursor: not-allowed; transform: none; }
+
+@media (max-width: 620px) {
+  .lineup { gap: 6px; padding: 10px; }
+  .lineup-tile { padding: 6px 10px 6px 6px; font-size: 14px; }
+  .lineup-num { width: 24px; height: 24px; font-size: 12px; }
+  .lineup-arrow { display: none; }
+}
+
+/* ===== 카드판 크기 / 확률 ===== */
+select {
+  width: 100%;
+  height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--cream);
+  font-size: 16px;
+  font-weight: 800;
+  padding: 0 12px;
+  outline: none;
+}
+select option { color: #241207; }
+select:focus { border-color: var(--gold); box-shadow: 0 0 0 4px rgba(255, 204, 102, 0.16); }
+
+.board { --cols: 5; }
+.board .card-mark { font-size: clamp(16px, calc(min(760px, 100vw) / var(--cols) * 0.34), 52px); }
+.board .card-label { font-size: clamp(8px, calc(min(760px, 100vw) / var(--cols) * 0.09), 14px); }
+.board .card-by { font-size: clamp(7px, calc(min(760px, 100vw) / var(--cols) * 0.075), 12px); }
+
+.status-right {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.prob {
+  display: grid;
+  place-items: center;
+  min-width: 96px;
+  padding: 8px 12px;
+  border-radius: 18px;
+  background: rgba(255, 92, 92, 0.16);
+  border: 1px solid rgba(255, 92, 92, 0.35);
+  text-align: center;
+}
+.prob-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: rgba(255, 243, 223, 0.7);
+  white-space: nowrap;
+}
+.prob strong {
+  font-size: 22px;
+  font-weight: 1000;
+  color: #ff8a7a;
+  line-height: 1.1;
+}
+
+@media (max-width: 620px) {
+  .prob { min-width: 78px; padding: 6px 8px; }
+  .prob strong { font-size: 18px; }
+}
+
+/* ===== 카드판 크기 숫자 입력 ===== */
+.grid-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.grid-inputs input {
+  width: 64px;
+  text-align: center;
+  padding: 0 6px;
+}
+.grid-inputs b {
+  font-size: 18px;
+  color: var(--gold);
+}
+.field em {
+  font-style: normal;
+  color: var(--gold);
+}
+@media (max-width: 620px) {
+  .grid-inputs input { flex: 1; width: auto; }
+}

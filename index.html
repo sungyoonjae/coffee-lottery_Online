@@ -15,7 +15,7 @@
     <section class="hero">
       <div class="badge">Coffee Lottery · Online</div>
       <h1>오늘의 커피 당번 뽑기</h1>
-      <p>떨어져 있어도 같이! 방을 만들고 코드를 공유하면, 모두 같은 카드판에서 차례대로 카드를 뒤집습니다.</p>
+      <p>떨어져 있어도 같이! 방을 만들고 코드를 공유한 뒤, 순서를 섞고 카드를 섞어 차례대로 뒤집습니다.</p>
     </section>
 
     <!-- 입장 화면 -->
@@ -50,9 +50,18 @@
 
       <section id="hostPanel" class="control-panel hidden">
         <label class="field">
+          <span>카드판 크기 (세로 × 가로) · <em id="gridTotal">25장</em></span>
+          <span class="grid-inputs">
+            <input id="gridRows" type="number" min="1" max="10" value="5" aria-label="세로 줄 수" />
+            <b>×</b>
+            <input id="gridCols" type="number" min="1" max="10" value="5" aria-label="가로 칸 수" />
+          </span>
+        </label>
+        <label class="field">
           <span>커피 살 사람 수</span>
           <input id="buyerCount" type="number" min="1" max="25" value="1" />
         </label>
+        <button id="orderBtn" class="primary-btn">순서 섞기</button>
         <button id="startBtn" class="primary-btn">카드 섞기</button>
         <button id="skipBtn" class="ghost-btn">차례 넘기기</button>
         <button id="resetBtn" class="ghost-btn">초기화</button>
@@ -63,10 +72,18 @@
           <strong id="statusTitle">연결 중...</strong>
           <p id="statusText"></p>
         </div>
-        <div class="counter">
-          <span id="foundCount">0</span>/<span id="targetCount">1</span>
+        <div class="status-right">
+          <div class="prob" title="지금 뒤집을 카드가 커피 사기일 확률">
+            <span class="prob-label" id="probLabel">당첨 확률</span>
+            <strong id="probValue">-</strong>
+          </div>
+          <div class="counter">
+            <span id="foundCount">0</span>/<span id="targetCount">1</span>
+          </div>
         </div>
       </section>
+
+      <section id="lineup" class="lineup" aria-label="순서"></section>
 
       <section id="board" class="board locked" aria-label="커피 제비뽑기 카드판"></section>
     </section>
