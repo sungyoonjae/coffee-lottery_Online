@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>커피 제비뽑기 온라인</title>
-  <link rel="stylesheet" href="style.css?v=202610261230" />
+  <link rel="stylesheet" href="style.css?v=202610261238" />
 </head>
 <body>
   <div class="bg-orb orb-1"></div>
@@ -68,6 +68,11 @@
         <button id="resetBtn" class="ghost-btn" title="참가자는 그대로 두고 카드판을 새로 만듭니다">새 판 만들기</button>
       </section>
 
+      <section id="shufflePanel" class="control-panel shuffle-panel hidden">
+        <div class="shuffle-msg">👉 내가 1번! 카드를 섞어서 시작하세요</div>
+        <button id="guestShuffleBtn" class="primary-btn">카드 섞기</button>
+      </section>
+
       <section class="status-card">
         <div>
           <strong id="statusTitle">연결 중...</strong>
@@ -110,6 +115,6 @@
 
   <canvas id="confettiCanvas"></canvas>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <script src="script.js?v=202610261230"></script>
+  <script src="script.js?v=202610261238"></script>
 </body>
 </html>

@@ -42,6 +42,8 @@ const probBarValue = $('#probBarValue');
 const probBarDetail = $('#probBarDetail');
 const orderBtn = $('#orderBtn');
 const startBtn = $('#startBtn');
+const shufflePanel = $('#shufflePanel');
+const guestShuffleBtn = $('#guestShuffleBtn');
 const lineupEl = $('#lineup');
 const resetBtn = $('#resetBtn');
 const statusTitle = $('#statusTitle');
@@ -249,6 +251,7 @@ function hostHandle(conn, msg) {
   }
 
   if (msg.t === 'flip') hostFlip(id, Number(msg.index));
+  if (msg.t === 'start') hostStart(id);
 }
 
 function hostPlayerLeft(id, reason) {
@@ -362,8 +365,22 @@ function hostSetTarget() {
   return target;
 }
 
-function hostStart() {
+// 카드를 섞을 수 있는 사람: 정해진 순서의 1번(나가 있으면 다음 사람)
+function shufflerId() {
+  if (!state || !state.lineup.length) return null;
+  return state.lineup.find(id => {
+    const p = state.players.find(player => player.id === id);
+    return p && p.online;
+  }) || null;
+}
+
+function hostStart(by = 'host') {
   if (lineupAnimating) return;
+  if (state.phase === 'shuffling' || state.phase === 'playing') return;
+  if (by !== shufflerId()) {
+    if (by === 'host') showToast(state.lineup.length ? `카드는 1번 ${playerName(shufflerId())}님만 섞을 수 있어요.` : '먼저 뽑기 순서 정하기를 눌러주세요.');
+    return;
+  }
   const lineup = state.lineup.filter(isOnline);
   if (lineup.length === 0) { showToast('먼저 뽑기 순서 정하기를 눌러주세요.'); return; }
   const target = clampTarget(buyerCountInput.value, lineup.length);
@@ -383,7 +400,7 @@ function hostStart() {
   state.turn = null;
   // 다음 판에는 오프라인 참가자를 목록에서 정리
   state.players = state.players.filter(p => p.online);
-  hostEmit({ kind: 'shuffle' });
+  hostEmit({ kind: 'shuffle', name: playerName(by) });
   hostBroadcast();
 
   const round = state.round;
@@ -598,7 +615,7 @@ function makeCards() {
 
 function onCardClick(index) {
   if (!state) return;
-  if (state.phase === 'lobby') { showToast(isHost ? (state.lineup.length ? '카드 섞기를 눌러 시작하세요.' : '먼저 뽑기 순서 정하기를 눌러주세요.') : '방장이 아직 시작하지 않았어요.'); return; }
+  if (state.phase === 'lobby') { showToast(!state.lineup.length ? (isHost ? '먼저 뽑기 순서 정하기를 눌러주세요.' : '방장이 순서를 정할 때까지 기다려주세요.') : (shufflerId() === myId ? '카드 섞기를 눌러 시작하세요.' : `1번 ${playerName(shufflerId())}님이 카드를 섞을 때까지 기다려주세요.`)); return; }
   if (state.phase === 'shuffling') return;
   if (state.phase === 'done') { showToast('이번 판은 끝났어요.'); return; }
   if (state.cards[index].flipped) return;
@@ -750,8 +767,11 @@ function renderStatus() {
     const inGame = state.phase === 'shuffling' || state.phase === 'playing';
     orderBtn.textContent = hasLineup ? '순서 다시 정하기' : '뽑기 순서 정하기';
     orderBtn.disabled = lineupAnimating || inGame;
-    startBtn.textContent = state.phase === 'lobby' ? '카드 섞기' : '카드 다시 섞기';
-    startBtn.disabled = !hasLineup || lineupAnimating;
+    const hostIsFirst = shufflerId() === 'host';
+    startBtn.textContent = !hasLineup ? '카드 섞기'
+      : hostIsFirst ? (state.phase === 'done' ? '카드 다시 섞기' : '카드 섞기')
+      : `카드 섞기 (1번 ${playerName(shufflerId())}님)`;
+    startBtn.disabled = !hasLineup || lineupAnimating || inGame || !hostIsFirst;
     startBtn.classList.toggle('primary-btn', hasLineup);
     startBtn.classList.toggle('ghost-btn', !hasLineup);
     orderBtn.classList.toggle('primary-btn', !hasLineup || state.phase === 'done');
@@ -769,6 +789,11 @@ function renderStatus() {
     buyerCountInput.style.opacity = inGame ? 0.5 : 1;
   }
 
+  const canGuestShuffle = !isHost && hasLineup && !lineupAnimating
+    && (state.phase === 'lobby' || state.phase === 'done') && shufflerId() === myId;
+  shufflePanel.classList.toggle('hidden', !canGuestShuffle);
+  guestShuffleBtn.textContent = state.phase === 'done' ? '카드 다시 섞기' : '카드 섞기';
+
   if (state.phase === 'lobby' && lineupAnimating) {
     statusTitle.textContent = '순서 섞는 중...';
     statusText.textContent = '두구두구두구... 누가 먼저일까요?';
@@ -780,9 +805,10 @@ function renderStatus() {
   } else if (state.phase === 'lobby') {
     statusTitle.textContent = '순서 확정!';
     const extra = outsiders ? ` (순서에 없는 참가자 ${outsiders}명 — 순서 다시 정하기를 누르면 포함돼요)` : '';
-    statusText.textContent = (isHost
-      ? '커피 살 사람 수를 정하고 카드 섞기를 누르면 시작합니다.'
-      : '방장이 카드를 섞으면 시작합니다.') + extra;
+    const first = shufflerId();
+    statusText.textContent = (first === myId
+      ? '내가 1번이에요! 카드 섞기를 누르면 시작합니다.'
+      : `1번 ${playerName(first)}님이 카드를 섞으면 시작합니다.`) + extra;
   } else if (state.phase === 'shuffling') {
     statusTitle.textContent = '카드 섞는 중...';
     statusText.textContent = '커피 사기 카드가 랜덤으로 배치되고 있습니다.';
@@ -812,6 +838,7 @@ function handleEvent(e) {
   if (e.kind === 'kick') showToast(`방장이 ${e.name}님을 강제퇴장 시켰어요`);
   if (e.kind === 'grid') showToast(`카드판이 ${gridRows()} × ${gridCols()} (${cardCount()}장)로 바뀌었어요`);
   if (e.kind === 'skip') showToast(`${e.name}님 차례를 넘겼어요`);
+  if (e.kind === 'shuffle' && e.name) showToast(`${e.name}님이 카드를 섞는 중!`);
   if (e.kind === 'start') showToast(`${playerName(state.turn)}님부터 시작!`);
   if (e.kind === 'lineup') playLineupAnimation(e.lineup);
 
@@ -1089,7 +1116,11 @@ nameInput?.addEventListener('keydown', e => {
 copyLinkBtn?.addEventListener('click', copyInvite);
 leaveBtn?.addEventListener('click', leaveRoom);
 orderBtn?.addEventListener('click', () => { hideModal(); hostOrder(); });
-startBtn?.addEventListener('click', () => { hideModal(); hostStart(); });
+startBtn?.addEventListener('click', () => { hideModal(); hostStart('host'); });
+guestShuffleBtn?.addEventListener('click', () => {
+  hideModal();
+  if (hostConn && hostConn.open) hostConn.send({ t: 'start' });
+});
 resetBtn?.addEventListener('click', () => { hideModal(); hostNewBoard(); });
 playersEl?.addEventListener('click', e => {
   const btn = e.target.closest('[data-kick]');
