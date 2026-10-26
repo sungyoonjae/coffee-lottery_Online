@@ -63,7 +63,6 @@
         </label>
         <button id="orderBtn" class="primary-btn">순서 섞기</button>
         <button id="startBtn" class="primary-btn">카드 섞기</button>
-        <button id="skipBtn" class="ghost-btn">차례 넘기기</button>
         <button id="resetBtn" class="ghost-btn">초기화</button>
       </section>
 
@@ -84,6 +83,12 @@
       </section>
 
       <section id="lineup" class="lineup" aria-label="순서"></section>
+
+      <div id="probBar" class="prob-bar hidden" aria-live="polite">
+        <span id="probBarWho" class="prob-bar-who"></span>
+        <span class="prob-bar-main">이번 카드가 커피 사기일 확률 <strong id="probBarValue">-</strong></span>
+        <span id="probBarDetail" class="prob-bar-detail"></span>
+      </div>
 
       <section id="board" class="board locked" aria-label="커피 제비뽑기 카드판"></section>
     </section>
