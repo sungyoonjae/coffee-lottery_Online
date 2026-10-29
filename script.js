@@ -630,6 +630,10 @@ function onCardClick(index) {
 function applyState(s) {
   const firstState = state === null || lastSeenEvent === -1;
   state = s;
+  if (!firstState && s.eventSeq > lastSeenEvent && s.event && s.event.kind === 'lineup') {
+    stopLineupAnimation();
+    lineupAnimating = true;
+  }
   roomCodeText.textContent = s.code;
 
   const gridKey = `${gridRows()}x${gridCols()}`;
@@ -768,7 +772,7 @@ function renderStatus() {
     orderBtn.textContent = hasLineup ? '순서 다시 정하기' : '뽑기 순서 정하기';
     orderBtn.disabled = lineupAnimating || inGame;
     const hostIsFirst = shufflerId() === 'host';
-    startBtn.textContent = !hasLineup ? '카드 섞기'
+    startBtn.textContent = (!hasLineup || lineupAnimating) ? '카드 섞기'
       : hostIsFirst ? (state.phase === 'done' ? '카드 다시 섞기' : '카드 섞기')
       : `카드 섞기 (1번 ${playerName(shufflerId())}님)`;
     startBtn.disabled = !hasLineup || lineupAnimating || inGame || !hostIsFirst;
